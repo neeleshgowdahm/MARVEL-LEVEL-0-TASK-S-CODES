@@ -1,0 +1,131 @@
+#include <WiFi.h>  
+
+// Replace with your network details  
+const char* ssid = "YOUR_SSID";  
+const char* password = "YOUR_PASSWORD";  
+
+WiFiServer server(80);  // Set port to 80 (default for HTTP)  
+
+String header;  // Store incoming HTTP requests  
+
+// Track LED states ("on" or "off")  
+String led26State = "off";  
+String led27State = "off";  
+
+// Assign GPIO pins  
+const int led26 = 26;  
+const int led27 = 27;  
+
+// Timing variables to handle client timeouts  
+unsigned long currentTime = millis();  
+unsigned long previousTime = 0;  
+const long timeoutTime = 2000;  // 2-second timeout  
+
+void setup() {  
+  Serial.begin(115200);  
+  pinMode(led26, OUTPUT);  
+  pinMode(led27, OUTPUT);  
+  digitalWrite(led26, LOW);  // Start with LEDs off  
+  digitalWrite(led27, LOW);  
+
+  // Connect to Wi-Fi  
+  Serial.print("Connecting to ");  
+  Serial.println(ssid);  
+  WiFi.begin(ssid, password);  
+  while (WiFi.status() != WL_CONNECTED) {  
+    delay(500);  
+    Serial.print(".");  
+  }  
+
+  // Print ESP32 IP address  
+  Serial.println("\nWiFi connected!");  
+  Serial.println("IP address: ");  
+  Serial.println(WiFi.localIP());  
+  server.begin();  // Start the web server  
+}  
+
+void loop() {  
+  WiFiClient client = server.available();  // Listen for clients  
+
+  if (client) {  
+    Serial.println("New client connected.");  
+    String currentLine = "";  
+    currentTime = millis();  
+    previousTime = currentTime;  
+
+    while (client.connected() && currentTime - previousTime <= timeoutTime) {  
+      currentTime = millis();  
+      if (client.available()) {  
+        char c = client.read();  
+        Serial.write(c);  
+        header += c;  
+
+        if (c == '\n') {  
+          // End of HTTP request  
+          if (currentLine.length() == 0) {  
+            // Send HTTP response  
+            client.println("HTTP/1.1 200 OK");  
+            client.println("Content-type:text/html");  
+            client.println("Connection: close");  
+            client.println();  
+
+            // Control LEDs based on request  
+            if (header.indexOf("GET /26/on") >= 0) {  
+              Serial.println("LED 26 ON");  
+              led26State = "on";  
+              digitalWrite(led26, HIGH);  
+            } else if (header.indexOf("GET /26/off") >= 0) {  
+              Serial.println("LED 26 OFF");  
+              led26State = "off";  
+              digitalWrite(led26, LOW);  
+            } else if (header.indexOf("GET /27/on") >= 0) {  
+              Serial.println("LED 27 ON");  
+              led27State = "on";  
+              digitalWrite(led27, HIGH);  
+            } else if (header.indexOf("GET /27/off") >= 0) {  
+              Serial.println("LED 27 OFF");  
+              led27State = "off";  
+              digitalWrite(led27, LOW);  
+            }  
+
+            // Generate HTML page  
+            client.println("<!DOCTYPE html><html>");  
+            client.println("<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");  
+            client.println("<link rel=\"icon\" href=\"data:,\">");  
+            client.println("<style>html { font-family: Arial; display: inline-block; margin: 0px auto; text-align: center; }");  
+            client.println(".button { background-color: #4CAF50; border: none; color: white; padding: 16px 40px; text-decoration: none; }");  
+            client.println(".button-off { background-color: #555555; }</style></head>");  
+            client.println("<body><h1>ESP32 LED Control</h1>");  
+
+            // Display LED 26 controls  
+            client.println("<p>LED 26: " + led26State + "</p>");  
+            if (led26State == "off") {  
+              client.println("<p><a href=\"/26/on\"><button class=\"button\">TURN ON</button></a></p>");  
+            } else {  
+              client.println("<p><a href=\"/26/off\"><button class=\"button button-off\">TURN OFF</button></a></p>");  
+            }  
+
+            // Display LED 27 controls  
+            client.println("<p>LED 27: " + led27State + "</p>");  
+            if (led27State == "off") {  
+              client.println("<p><a href=\"/27/on\"><button class=\"button\">TURN ON</button></a></p>");  
+            } else {  
+              client.println("<p><a href=\"/27/off\"><button class=\"button button-off\">TURN OFF</button></a></p>");  
+            }  
+
+            client.println("</body></html>");  
+            client.println();  
+            break;  
+          } else {  
+            currentLine = "";  
+          }  
+        } else if (c != '\r') {  
+          currentLine += c;  
+        }  
+      }  
+    }  
+    header = "";  
+    client.stop();  
+    Serial.println("Client disconnected.");  
+  }  
+}
